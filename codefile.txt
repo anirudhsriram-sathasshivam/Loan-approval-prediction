@@ -1,0 +1,1493 @@
+# ==========================================================
+# LOAN APPROVAL PREDICTION - BASE PAPER PIPELINE
+# ==========================================================
+
+import pandas as pd
+import numpy as np
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
+from sklearn.ensemble import GradientBoostingClassifier, AdaBoostClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.ensemble import VotingClassifier
+
+from imblearn.over_sampling import SMOTE
+
+import warnings
+warnings.filterwarnings("ignore")
+
+# ==========================================================
+# STEP 1 : LOAD DATASET
+# ==========================================================
+
+df = pd.read_csv("/content/drive/MyDrive/Project/ExtraDataset.csv")
+
+print("\nSTEP 1 : DATASET LOADED")
+print("Shape:", df.shape)
+print(df.head())
+
+# ==========================================================
+# STEP 2 : DATA CLEANING
+# ==========================================================
+
+print("\nSTEP 2 : DATA CLEANING")
+
+# remove ID column
+df = df.drop(columns=["Applicant_ID"])
+
+# check missing values
+print("\nMissing values before cleaning")
+print(df.isnull().sum())
+
+# fill categorical with mode
+cat_cols = df.select_dtypes(include="object").columns
+
+for col in cat_cols:
+    df[col].fillna(df[col].mode()[0], inplace=True)
+
+# fill numeric with median
+num_cols = df.select_dtypes(exclude="object").columns
+
+for col in num_cols:
+    df[col].fillna(df[col].median(), inplace=True)
+
+print("\nMissing values after cleaning")
+print(df.isnull().sum())
+
+# ==========================================================
+# STEP 3 : ENCODE CATEGORICAL VARIABLES
+# ==========================================================
+
+print("\nSTEP 3 : LABEL ENCODING")
+
+encoder = LabelEncoder()
+
+for col in cat_cols:
+    df[col] = encoder.fit_transform(df[col])
+
+print(df.head())
+
+# ==========================================================
+# STEP 4 : NORMALIZATION (MIN-MAX)
+# ==========================================================
+
+print("\nSTEP 4 : NORMALIZATION")
+
+X = df.drop("Loan_Approval_Status", axis=1)
+y = df["Loan_Approval_Status"]
+
+scaler = MinMaxScaler()
+
+X_scaled = scaler.fit_transform(X)
+
+print("Shape after scaling:", X_scaled.shape)
+
+# ==========================================================
+# STEP 5 : CLASS BALANCING USING SMOTE
+# ==========================================================
+
+print("\nSTEP 5 : SMOTE BALANCING")
+
+print("Before SMOTE")
+print(y.value_counts())
+
+smote = SMOTE(random_state=42)
+
+X_bal, y_bal = smote.fit_resample(X_scaled, y)
+
+print("\nAfter SMOTE")
+print(pd.Series(y_bal).value_counts())
+
+# ==========================================================
+# STEP 6 : TRAIN TEST SPLIT (75 / 25)
+# ==========================================================
+
+print("\nSTEP 6 : TRAIN TEST SPLIT")
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X_bal,
+    y_bal,
+    test_size=0.25,
+    stratify=y_bal,
+    random_state=42
+)
+
+print("Train shape:", X_train.shape)
+print("Test shape:", X_test.shape)
+
+# ==========================================================
+# STEP 7 : TRAIN MULTIPLE MACHINE LEARNING MODELS
+# ==========================================================
+
+print("\nSTEP 7 : TRAINING MODELS")
+
+models = {
+
+    "Logistic Regression": LogisticRegression(),
+
+    "Decision Tree": DecisionTreeClassifier(),
+
+    "Random Forest": RandomForestClassifier(),
+
+    "Extra Trees": ExtraTreesClassifier(),
+
+    "SVM": SVC(kernel="linear", probability=True),
+
+    "KNN": KNeighborsClassifier(),
+
+    "Gaussian NB": GaussianNB(),
+
+    "AdaBoost": AdaBoostClassifier(),
+
+    "Gradient Boosting": GradientBoostingClassifier()
+
+}
+
+results = {}
+
+for name, model in models.items():
+
+    print("\n==============================")
+    print("MODEL:", name)
+
+    model.fit(X_train, y_train)
+
+    pred = model.predict(X_test)
+
+    acc = accuracy_score(y_test, pred)
+
+    results[name] = acc
+
+    print("Accuracy:", acc)
+
+# ==========================================================
+# STEP 8 : SELECT BEST 3 MODELS
+# ==========================================================
+
+print("\nSTEP 8 : SELECT BEST MODELS")
+
+sorted_models = sorted(results.items(), key=lambda x: x[1], reverse=True)
+
+top3 = sorted_models[:3]
+
+print("\nTop 3 models:")
+for model in top3:
+    print(model)
+
+best_models = []
+
+for name, score in top3:
+    best_models.append((name, models[name]))
+
+# ==========================================================
+# STEP 9 : VOTING ENSEMBLE
+# ==========================================================
+
+print("\nSTEP 9 : VOTING ENSEMBLE")
+
+ensemble = VotingClassifier(
+    estimators=best_models,
+    voting="soft"
+)
+
+ensemble.fit(X_train, y_train)
+
+pred = ensemble.predict(X_test)
+
+ensemble_acc = accuracy_score(y_test, pred)
+
+print("\nEnsemble Accuracy:", ensemble_acc)
+
+# ==========================================================
+# STEP 10 : MODEL EVALUATION
+# ==========================================================
+
+print("\nCONFUSION MATRIX")
+print(confusion_matrix(y_test, pred))
+
+print("\nCLASSIFICATION REPORT")
+print(classification_report(y_test, pred))
+
+# ==========================================================
+# STEP 11 : SAMPLE PREDICTION
+# ==========================================================
+
+print("\nSTEP 11 : SAMPLE PREDICTIONS")
+
+sample = X_test[:5]
+
+print("Predictions:", ensemble.predict(sample))
+
+
+Output:
+
+
+STEP 1 : DATASET LOADED
+Shape: (52000, 27)
+   Applicant_ID  Gender  Age Marital_Status  Dependents     Education  \
+0             1  Female   25        Married           2      Graduate   
+1             2    Male   36        Married           2   High School   
+2             3    Male   43         Single           0  Postgraduate   
+3             4  Female   28        Married           0   High School   
+4             5  Female   32         Single           0      Graduate   
+
+  Employment_Status Occupation_Type Residential_Status City/Town  ...  \
+0          Employed        Business                Own     Urban  ...   
+1          Employed        Business                Own  Suburban  ...   
+2     Self-Employed      Freelancer                Own     Urban  ...   
+3     Self-Employed      Freelancer               Rent  Suburban  ...   
+4          Employed        Salaried               Rent  Suburban  ...   
+
+   Loan_Amount_Requested  Loan_Term  Loan_Purpose  Interest_Rate  Loan_Type  \
+0                  24535        209          Home           4.27    Secured   
+1                   8288         33          Home          14.78  Unsecured   
+2                  10308        159       Vehicle          12.33    Secured   
+3                  33937         39      Personal           8.77    Secured   
+4                  23360         34          Home           9.04  Unsecured   
+
+   Co-Applicant  Bank_Account_History  Transaction_Frequency  Default_Risk  \
+0           Yes                     8                     20          0.81   
+1           Yes                     9                      9          0.17   
+2           Yes                     7                     27          0.25   
+3            No                     9                     16          0.27   
+4            No                     1                     17          0.32   
+
+  Loan_Approval_Status  
+0                    1  
+1                    0  
+2                    0  
+3                    1  
+4                    1  
+
+[5 rows x 27 columns]
+
+STEP 2 : DATA CLEANING
+
+Missing values before cleaning
+Gender                        0
+Age                           0
+Marital_Status                0
+Dependents                    0
+Education                     0
+Employment_Status             0
+Occupation_Type               0
+Residential_Status            0
+City/Town                     0
+Annual_Income                 0
+Monthly_Expenses              0
+Credit_Score                  0
+Existing_Loans                0
+Total_Existing_Loan_Amount    0
+Outstanding_Debt              0
+Loan_History                  0
+Loan_Amount_Requested         0
+Loan_Term                     0
+Loan_Purpose                  0
+Interest_Rate                 0
+Loan_Type                     0
+Co-Applicant                  0
+Bank_Account_History          0
+Transaction_Frequency         0
+Default_Risk                  0
+Loan_Approval_Status          0
+dtype: int64
+
+Missing values after cleaning
+Gender                        0
+Age                           0
+Marital_Status                0
+Dependents                    0
+Education                     0
+Employment_Status             0
+Occupation_Type               0
+Residential_Status            0
+City/Town                     0
+Annual_Income                 0
+Monthly_Expenses              0
+Credit_Score                  0
+Existing_Loans                0
+Total_Existing_Loan_Amount    0
+Outstanding_Debt              0
+Loan_History                  0
+Loan_Amount_Requested         0
+Loan_Term                     0
+Loan_Purpose                  0
+Interest_Rate                 0
+Loan_Type                     0
+Co-Applicant                  0
+Bank_Account_History          0
+Transaction_Frequency         0
+Default_Risk                  0
+Loan_Approval_Status          0
+dtype: int64
+
+STEP 3 : LABEL ENCODING
+   Gender  Age  Marital_Status  Dependents  Education  Employment_Status  \
+0       0   25               1           2          0                  0   
+1       1   36               1           2          1                  0   
+2       1   43               2           0          2                  1   
+3       0   28               1           0          1                  1   
+4       0   32               2           0          0                  0   
+
+   Occupation_Type  Residential_Status  City/Town  Annual_Income  ...  \
+0                0                   1          2         139901  ...   
+1                0                   1          1          21162  ...   
+2                1                   1          2          27815  ...   
+3                1                   2          1         137853  ...   
+4                3                   2          1          81753  ...   
+
+   Loan_Amount_Requested  Loan_Term  Loan_Purpose  Interest_Rate  Loan_Type  \
+0                  24535        209             1           4.27          0   
+1                   8288         33             1          14.78          1   
+2                  10308        159             3          12.33          0   
+3                  33937         39             2           8.77          0   
+4                  23360         34             1           9.04          1   
+
+   Co-Applicant  Bank_Account_History  Transaction_Frequency  Default_Risk  \
+0             1                     8                     20          0.81   
+1             1                     9                      9          0.17   
+2             1                     7                     27          0.25   
+3             0                     9                     16          0.27   
+4             0                     1                     17          0.32   
+
+   Loan_Approval_Status  
+0                     1  
+1                     0  
+2                     0  
+3                     1  
+4                     1  
+
+[5 rows x 26 columns]
+
+STEP 4 : NORMALIZATION
+Shape after scaling: (52000, 25)
+
+STEP 5 : SMOTE BALANCING
+Before SMOTE
+Loan_Approval_Status
+1    33366
+0    18634
+Name: count, dtype: int64
+
+After SMOTE
+Loan_Approval_Status
+1    33366
+0    33366
+Name: count, dtype: int64
+
+STEP 6 : TRAIN TEST SPLIT
+Train shape: (50049, 25)
+Test shape: (16683, 25)
+
+STEP 7 : TRAINING MODELS
+
+==============================
+MODEL: Logistic Regression
+Accuracy: 0.8208955223880597
+
+==============================
+MODEL: Decision Tree
+Accuracy: 0.772462986273452
+
+==============================
+MODEL: Random Forest
+Accuracy: 0.8795180722891566
+
+==============================
+MODEL: Extra Trees
+Accuracy: 0.8835940778037523
+
+==============================
+MODEL: SVM
+Accuracy: 0.8180183420248157
+
+==============================
+MODEL: KNN
+Accuracy: 0.7964394893004855
+
+==============================
+MODEL: Gaussian NB
+Accuracy: 0.818977402145897
+
+==============================
+MODEL: AdaBoost
+Accuracy: 0.8376191332494156
+
+==============================
+MODEL: Gradient Boosting
+Accuracy: 0.8765210094107775
+
+STEP 8 : SELECT BEST MODELS
+
+Top 3 models:
+('Extra Trees', 0.8835940778037523)
+('Random Forest', 0.8795180722891566)
+('Gradient Boosting', 0.8765210094107775)
+
+STEP 9 : VOTING ENSEMBLE
+
+Ensemble Accuracy: 0.8793382485164539
+
+CONFUSION MATRIX
+[[6900 1442]
+ [ 571 7770]]
+
+CLASSIFICATION REPORT
+              precision    recall  f1-score   support
+
+           0       0.92      0.83      0.87      8342
+           1       0.84      0.93      0.89      8341
+
+    accuracy                           0.88     16683
+   macro avg       0.88      0.88      0.88     16683
+weighted avg       0.88      0.88      0.88     16683
+
+
+STEP 11 : SAMPLE PREDICTIONS
+Predictions: [0 1 1 0 1]
+
+-----------------------------------------------------------------
+
+# ==========================================================
+# LOAN APPROVAL PREDICTION - COMPLETE PIPELINE
+# ML + DL + HYPERPARAMETER TUNING + ENSEMBLES
+# ==========================================================
+
+import pandas as pd
+import numpy as np
+import warnings
+warnings.filterwarnings("ignore")
+
+# sklearn
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
+from sklearn.ensemble import GradientBoostingClassifier, AdaBoostClassifier
+from sklearn.ensemble import VotingClassifier, StackingClassifier
+
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neural_network import MLPClassifier
+
+# SMOTE
+from imblearn.over_sampling import SMOTE
+
+# Deep Learning
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+
+# ==========================================================
+# STEP 1 : LOAD DATASET
+# ==========================================================
+
+df = pd.read_csv("/content/drive/MyDrive/Project/ExtraDataset.csv")
+
+print("\nSTEP 1 : DATASET LOADED")
+print("Shape:", df.shape)
+print(df.head())
+
+# ==========================================================
+# STEP 2 : DATA CLEANING
+# ==========================================================
+
+print("\nSTEP 2 : DATA CLEANING")
+
+df = df.drop(columns=["Applicant_ID"])
+
+print("\nMissing values before cleaning")
+print(df.isnull().sum())
+
+cat_cols = df.select_dtypes(include="object").columns
+num_cols = df.select_dtypes(exclude="object").columns
+
+for col in cat_cols:
+    df[col].fillna(df[col].mode()[0], inplace=True)
+
+for col in num_cols:
+    df[col].fillna(df[col].median(), inplace=True)
+
+print("\nMissing values after cleaning")
+print(df.isnull().sum())
+
+# ==========================================================
+# STEP 3 : LABEL ENCODING
+# ==========================================================
+
+print("\nSTEP 3 : LABEL ENCODING")
+
+encoder = LabelEncoder()
+
+for col in cat_cols:
+    df[col] = encoder.fit_transform(df[col])
+
+print(df.head())
+
+# ==========================================================
+# STEP 4 : NORMALIZATION
+# ==========================================================
+
+print("\nSTEP 4 : NORMALIZATION")
+
+X = df.drop("Loan_Approval_Status", axis=1)
+y = df["Loan_Approval_Status"]
+
+scaler = MinMaxScaler()
+
+X_scaled = scaler.fit_transform(X)
+
+print("Shape after scaling:", X_scaled.shape)
+
+# ==========================================================
+# STEP 5 : SMOTE BALANCING
+# ==========================================================
+
+print("\nSTEP 5 : SMOTE BALANCING")
+
+print("Before SMOTE")
+print(y.value_counts())
+
+smote = SMOTE(random_state=42)
+
+X_bal, y_bal = smote.fit_resample(X_scaled, y)
+
+print("\nAfter SMOTE")
+print(pd.Series(y_bal).value_counts())
+
+# ==========================================================
+# STEP 6 : TRAIN TEST SPLIT
+# ==========================================================
+
+print("\nSTEP 6 : TRAIN TEST SPLIT")
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X_bal,
+    y_bal,
+    test_size=0.25,
+    stratify=y_bal,
+    random_state=42
+)
+
+print("Train shape:", X_train.shape)
+print("Test shape:", X_test.shape)
+
+# ==========================================================
+# STEP 7 : MACHINE LEARNING MODELS
+# ==========================================================
+
+print("\nSTEP 7 : TRAINING ML MODELS")
+
+models = {
+
+    "Logistic Regression": LogisticRegression(),
+    "Decision Tree": DecisionTreeClassifier(),
+    "Random Forest": RandomForestClassifier(),
+    "Extra Trees": ExtraTreesClassifier(),
+    "SVM": SVC(kernel="linear", probability=True),
+    "KNN": KNeighborsClassifier(),
+    "Gaussian NB": GaussianNB(),
+    "AdaBoost": AdaBoostClassifier(),
+    "Gradient Boosting": GradientBoostingClassifier()
+
+}
+
+results = {}
+
+for name, model in models.items():
+
+    print("\n==============================")
+    print("MODEL:", name)
+
+    model.fit(X_train, y_train)
+
+    pred = model.predict(X_test)
+
+    acc = accuracy_score(y_test, pred)
+
+    results[name] = acc
+
+    print("Accuracy:", acc)
+
+# ==========================================================
+# STEP 8 : MLP WITH HYPERPARAMETER TUNING (FAST GRID)
+# ==========================================================
+
+print("\nSTEP 8 : MLP HYPERPARAMETER TUNING")
+
+mlp = MLPClassifier(max_iter=200)
+
+param_grid = {
+
+    'hidden_layer_sizes': [(64,), (128,)],
+    'activation': ['relu'],
+    'alpha': [0.0001, 0.001],
+    'learning_rate': ['adaptive']
+
+}
+
+grid = GridSearchCV(
+    mlp,
+    param_grid,
+    cv=3,
+    scoring='accuracy',
+    n_jobs=-1,
+    verbose=1
+)
+
+grid.fit(X_train, y_train)
+
+best_mlp = grid.best_estimator_
+
+print("Best Parameters:", grid.best_params_)
+
+mlp_pred = best_mlp.predict(X_test)
+
+mlp_acc = accuracy_score(y_test, mlp_pred)
+
+print("MLP Accuracy:", mlp_acc)
+
+results["MLP"] = mlp_acc
+
+# ==========================================================
+# STEP 9 : DEEP LEARNING MODEL
+# ==========================================================
+
+print("\nSTEP 9 : DEEP NEURAL NETWORK")
+
+dl_model = Sequential()
+
+dl_model.add(Dense(128, activation='relu', input_shape=(X_train.shape[1],)))
+dl_model.add(Dropout(0.3))
+
+dl_model.add(Dense(64, activation='relu'))
+dl_model.add(Dropout(0.3))
+
+dl_model.add(Dense(32, activation='relu'))
+
+dl_model.add(Dense(1, activation='sigmoid'))
+
+dl_model.compile(
+    optimizer=Adam(learning_rate=0.001),
+    loss='binary_crossentropy',
+    metrics=['accuracy']
+)
+
+dl_model.fit(
+    X_train,
+    y_train,
+    epochs=30,
+    batch_size=32,
+    validation_split=0.2,
+    verbose=1
+)
+
+dl_pred = (dl_model.predict(X_test) > 0.5).astype(int)
+
+dl_acc = accuracy_score(y_test, dl_pred)
+
+print("Deep Learning Accuracy:", dl_acc)
+
+results["DeepNN"] = dl_acc
+
+# ==========================================================
+# STEP 10 : SELECT BEST 3 MODELS
+# ==========================================================
+
+print("\nSTEP 10 : SELECT BEST MODELS")
+
+sorted_models = sorted(results.items(), key=lambda x: x[1], reverse=True)
+
+top3 = sorted_models[:3]
+
+print("\nTop 3 models:")
+for model in top3:
+    print(model)
+
+best_models = []
+
+for name, score in top3:
+
+    if name == "MLP":
+        best_models.append((name, best_mlp))
+    else:
+        best_models.append((name, models[name]))
+
+# ==========================================================
+# STEP 11 : VOTING ENSEMBLE
+# ==========================================================
+
+print("\nSTEP 11 : VOTING ENSEMBLE")
+
+ensemble = VotingClassifier(
+    estimators=best_models,
+    voting="soft"
+)
+
+ensemble.fit(X_train, y_train)
+
+pred = ensemble.predict(X_test)
+
+ensemble_acc = accuracy_score(y_test, pred)
+
+print("\nVoting Ensemble Accuracy:", ensemble_acc)
+
+print("\nCONFUSION MATRIX")
+print(confusion_matrix(y_test, pred))
+
+print("\nCLASSIFICATION REPORT")
+print(classification_report(y_test, pred))
+
+# ==========================================================
+# STEP 12 : STACKING ENSEMBLE
+# ==========================================================
+
+print("\nSTEP 12 : STACKING ENSEMBLE")
+
+base_models = [
+
+    ('rf', RandomForestClassifier()),
+    ('et', ExtraTreesClassifier()),
+    ('gb', GradientBoostingClassifier()),
+    ('mlp', best_mlp)
+
+]
+
+meta_model = LogisticRegression()
+
+stack_model = StackingClassifier(
+    estimators=base_models,
+    final_estimator=meta_model,
+    cv=5
+)
+
+stack_model.fit(X_train, y_train)
+
+stack_pred = stack_model.predict(X_test)
+
+stack_acc = accuracy_score(y_test, stack_pred)
+
+print("\nStacking Accuracy:", stack_acc)
+
+print("\nStacking Confusion Matrix")
+print(confusion_matrix(y_test, stack_pred))
+
+print("\nStacking Classification Report")
+print(classification_report(y_test, stack_pred))
+
+# ==========================================================
+# STEP 13 : SAMPLE PREDICTION
+# ==========================================================
+
+print("\nSTEP 13 : SAMPLE PREDICTIONS")
+
+sample = X_test[:5]
+
+print("Predictions:", stack_model.predict(sample))
+
+Output:
+
+
+STEP 1 : DATASET LOADED
+Shape: (52000, 27)
+   Applicant_ID  Gender  Age Marital_Status  Dependents     Education  \
+0             1  Female   25        Married           2      Graduate   
+1             2    Male   36        Married           2   High School   
+2             3    Male   43         Single           0  Postgraduate   
+3             4  Female   28        Married           0   High School   
+4             5  Female   32         Single           0      Graduate   
+
+  Employment_Status Occupation_Type Residential_Status City/Town  ...  \
+0          Employed        Business                Own     Urban  ...   
+1          Employed        Business                Own  Suburban  ...   
+2     Self-Employed      Freelancer                Own     Urban  ...   
+3     Self-Employed      Freelancer               Rent  Suburban  ...   
+4          Employed        Salaried               Rent  Suburban  ...   
+
+   Loan_Amount_Requested  Loan_Term  Loan_Purpose  Interest_Rate  Loan_Type  \
+0                  24535        209          Home           4.27    Secured   
+1                   8288         33          Home          14.78  Unsecured   
+2                  10308        159       Vehicle          12.33    Secured   
+3                  33937         39      Personal           8.77    Secured   
+4                  23360         34          Home           9.04  Unsecured   
+
+   Co-Applicant  Bank_Account_History  Transaction_Frequency  Default_Risk  \
+0           Yes                     8                     20          0.81   
+1           Yes                     9                      9          0.17   
+2           Yes                     7                     27          0.25   
+3            No                     9                     16          0.27   
+4            No                     1                     17          0.32   
+
+  Loan_Approval_Status  
+0                    1  
+1                    0  
+2                    0  
+3                    1  
+4                    1  
+
+[5 rows x 27 columns]
+
+STEP 2 : DATA CLEANING
+
+Missing values before cleaning
+Gender                        0
+Age                           0
+Marital_Status                0
+Dependents                    0
+Education                     0
+Employment_Status             0
+Occupation_Type               0
+Residential_Status            0
+City/Town                     0
+Annual_Income                 0
+Monthly_Expenses              0
+Credit_Score                  0
+Existing_Loans                0
+Total_Existing_Loan_Amount    0
+Outstanding_Debt              0
+Loan_History                  0
+Loan_Amount_Requested         0
+Loan_Term                     0
+Loan_Purpose                  0
+Interest_Rate                 0
+Loan_Type                     0
+Co-Applicant                  0
+Bank_Account_History          0
+Transaction_Frequency         0
+Default_Risk                  0
+Loan_Approval_Status          0
+dtype: int64
+
+Missing values after cleaning
+Gender                        0
+Age                           0
+Marital_Status                0
+Dependents                    0
+Education                     0
+Employment_Status             0
+Occupation_Type               0
+Residential_Status            0
+City/Town                     0
+Annual_Income                 0
+Monthly_Expenses              0
+Credit_Score                  0
+Existing_Loans                0
+Total_Existing_Loan_Amount    0
+Outstanding_Debt              0
+Loan_History                  0
+Loan_Amount_Requested         0
+Loan_Term                     0
+Loan_Purpose                  0
+Interest_Rate                 0
+Loan_Type                     0
+Co-Applicant                  0
+Bank_Account_History          0
+Transaction_Frequency         0
+Default_Risk                  0
+Loan_Approval_Status          0
+dtype: int64
+
+STEP 3 : LABEL ENCODING
+   Gender  Age  Marital_Status  Dependents  Education  Employment_Status  \
+0       0   25               1           2          0                  0   
+1       1   36               1           2          1                  0   
+2       1   43               2           0          2                  1   
+3       0   28               1           0          1                  1   
+4       0   32               2           0          0                  0   
+
+   Occupation_Type  Residential_Status  City/Town  Annual_Income  ...  \
+0                0                   1          2         139901  ...   
+1                0                   1          1          21162  ...   
+2                1                   1          2          27815  ...   
+3                1                   2          1         137853  ...   
+4                3                   2          1          81753  ...   
+
+   Loan_Amount_Requested  Loan_Term  Loan_Purpose  Interest_Rate  Loan_Type  \
+0                  24535        209             1           4.27          0   
+1                   8288         33             1          14.78          1   
+2                  10308        159             3          12.33          0   
+3                  33937         39             2           8.77          0   
+4                  23360         34             1           9.04          1   
+
+   Co-Applicant  Bank_Account_History  Transaction_Frequency  Default_Risk  \
+0             1                     8                     20          0.81   
+1             1                     9                      9          0.17   
+2             1                     7                     27          0.25   
+3             0                     9                     16          0.27   
+4             0                     1                     17          0.32   
+
+   Loan_Approval_Status  
+0                     1  
+1                     0  
+2                     0  
+3                     1  
+4                     1  
+
+[5 rows x 26 columns]
+
+STEP 4 : NORMALIZATION
+Shape after scaling: (52000, 25)
+
+STEP 5 : SMOTE BALANCING
+Before SMOTE
+Loan_Approval_Status
+1    33366
+0    18634
+Name: count, dtype: int64
+
+After SMOTE
+Loan_Approval_Status
+1    33366
+0    33366
+Name: count, dtype: int64
+
+STEP 6 : TRAIN TEST SPLIT
+Train shape: (50049, 25)
+Test shape: (16683, 25)
+
+STEP 7 : TRAINING ML MODELS
+
+==============================
+MODEL: Logistic Regression
+Accuracy: 0.8208955223880597
+
+==============================
+MODEL: Decision Tree
+Accuracy: 0.773481987652101
+
+==============================
+MODEL: Random Forest
+Accuracy: 0.8788587184559132
+
+==============================
+MODEL: Extra Trees
+Accuracy: 0.882215428879698
+
+==============================
+MODEL: SVM
+Accuracy: 0.8180183420248157
+
+==============================
+MODEL: KNN
+Accuracy: 0.7964394893004855
+
+==============================
+MODEL: Gaussian NB
+Accuracy: 0.818977402145897
+
+==============================
+MODEL: AdaBoost
+Accuracy: 0.8376191332494156
+
+==============================
+MODEL: Gradient Boosting
+Accuracy: 0.8765210094107775
+
+STEP 8 : MLP HYPERPARAMETER TUNING
+Fitting 3 folds for each of 4 candidates, totalling 12 fits
+Best Parameters: {'activation': 'relu', 'alpha': 0.0001, 'hidden_layer_sizes': (64,), 'learning_rate': 'adaptive'}
+MLP Accuracy: 0.8202361685548163
+
+STEP 9 : DEEP NEURAL NETWORK
+Epoch 1/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 11s 6ms/step - accuracy: 0.7529 - loss: 0.5367 - val_accuracy: 0.8194 - val_loss: 0.4551
+Epoch 2/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8137 - loss: 0.4690 - val_accuracy: 0.8235 - val_loss: 0.4483
+Epoch 3/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 5s 4ms/step - accuracy: 0.8180 - loss: 0.4604 - val_accuracy: 0.8236 - val_loss: 0.4470
+Epoch 4/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8190 - loss: 0.4547 - val_accuracy: 0.8204 - val_loss: 0.4505
+Epoch 5/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8203 - loss: 0.4542 - val_accuracy: 0.8243 - val_loss: 0.4430
+Epoch 6/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8234 - loss: 0.4477 - val_accuracy: 0.8237 - val_loss: 0.4480
+Epoch 7/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 5s 4ms/step - accuracy: 0.8240 - loss: 0.4469 - val_accuracy: 0.8256 - val_loss: 0.4474
+Epoch 8/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8195 - loss: 0.4517 - val_accuracy: 0.8235 - val_loss: 0.4442
+Epoch 9/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8158 - loss: 0.4574 - val_accuracy: 0.8255 - val_loss: 0.4404
+Epoch 10/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 5s 4ms/step - accuracy: 0.8170 - loss: 0.4564 - val_accuracy: 0.8253 - val_loss: 0.4413
+Epoch 11/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8215 - loss: 0.4476 - val_accuracy: 0.8244 - val_loss: 0.4439
+Epoch 12/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 5s 3ms/step - accuracy: 0.8195 - loss: 0.4503 - val_accuracy: 0.8232 - val_loss: 0.4442
+Epoch 13/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 5s 4ms/step - accuracy: 0.8212 - loss: 0.4455 - val_accuracy: 0.8254 - val_loss: 0.4420
+Epoch 14/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8222 - loss: 0.4443 - val_accuracy: 0.8244 - val_loss: 0.4408
+Epoch 15/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8205 - loss: 0.4473 - val_accuracy: 0.8255 - val_loss: 0.4412
+Epoch 16/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 4ms/step - accuracy: 0.8182 - loss: 0.4497 - val_accuracy: 0.8253 - val_loss: 0.4396
+Epoch 17/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 5s 4ms/step - accuracy: 0.8223 - loss: 0.4429 - val_accuracy: 0.8243 - val_loss: 0.4403
+Epoch 18/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8185 - loss: 0.4493 - val_accuracy: 0.8256 - val_loss: 0.4417
+Epoch 19/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8231 - loss: 0.4403 - val_accuracy: 0.8260 - val_loss: 0.4409
+Epoch 20/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 5s 4ms/step - accuracy: 0.8230 - loss: 0.4404 - val_accuracy: 0.8257 - val_loss: 0.4389
+Epoch 21/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8229 - loss: 0.4380 - val_accuracy: 0.8237 - val_loss: 0.4412
+Epoch 22/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8195 - loss: 0.4423 - val_accuracy: 0.8228 - val_loss: 0.4451
+Epoch 23/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 5s 4ms/step - accuracy: 0.8250 - loss: 0.4341 - val_accuracy: 0.8258 - val_loss: 0.4408
+Epoch 24/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 4ms/step - accuracy: 0.8231 - loss: 0.4363 - val_accuracy: 0.8259 - val_loss: 0.4382
+Epoch 25/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8211 - loss: 0.4388 - val_accuracy: 0.8232 - val_loss: 0.4441
+Epoch 26/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8227 - loss: 0.4371 - val_accuracy: 0.8246 - val_loss: 0.4407
+Epoch 27/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 5s 4ms/step - accuracy: 0.8198 - loss: 0.4399 - val_accuracy: 0.8264 - val_loss: 0.4383
+Epoch 28/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8234 - loss: 0.4337 - val_accuracy: 0.8227 - val_loss: 0.4436
+Epoch 29/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 4s 3ms/step - accuracy: 0.8196 - loss: 0.4381 - val_accuracy: 0.8264 - val_loss: 0.4398
+Epoch 30/30
+1252/1252 ━━━━━━━━━━━━━━━━━━━━ 5s 4ms/step - accuracy: 0.8272 - loss: 0.4279 - val_accuracy: 0.8251 - val_loss: 0.4412
+522/522 ━━━━━━━━━━━━━━━━━━━━ 1s 2ms/step
+Deep Learning Accuracy: 0.8193370496913025
+
+STEP 10 : SELECT BEST MODELS
+
+Top 3 models:
+('Extra Trees', 0.882215428879698)
+('Random Forest', 0.8788587184559132)
+('Gradient Boosting', 0.8765210094107775)
+
+STEP 11 : VOTING ENSEMBLE
+
+Voting Ensemble Accuracy: 0.8793382485164539
+
+CONFUSION MATRIX
+[[6900 1442]
+ [ 571 7770]]
+
+CLASSIFICATION REPORT
+              precision    recall  f1-score   support
+
+           0       0.92      0.83      0.87      8342
+           1       0.84      0.93      0.89      8341
+
+    accuracy                           0.88     16683
+   macro avg       0.88      0.88      0.88     16683
+weighted avg       0.88      0.88      0.88     16683
+
+
+STEP 12 : STACKING ENSEMBLE
+
+Stacking Accuracy: 0.8920457951207816
+
+Stacking Confusion Matrix
+[[7113 1229]
+ [ 572 7769]]
+
+Stacking Classification Report
+              precision    recall  f1-score   support
+
+           0       0.93      0.85      0.89      8342
+           1       0.86      0.93      0.90      8341
+
+    accuracy                           0.89     16683
+   macro avg       0.89      0.89      0.89     16683
+weighted avg       0.89      0.89      0.89     16683
+
+
+STEP 13 : SAMPLE PREDICTIONS
+Predictions: [0 1 0 0 1]
+
+
+------------------------------------------------------
+
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
+
+cm_vote = confusion_matrix(y_test, pred)
+
+plt.figure(figsize=(6,5))
+
+sns.heatmap(cm_vote,
+            annot=True,
+            fmt='d',
+            cmap='Blues',
+            xticklabels=['Rejected','Approved'],
+            yticklabels=['Rejected','Approved'])
+
+plt.title("Confusion Matrix - Voting Ensemble")
+plt.xlabel("Predicted Label")
+plt.ylabel("True Label")
+
+plt.tight_layout()
+plt.show()
+
+
+---------------------------------------------------------------
+
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
+
+cm_stack = confusion_matrix(y_test, stack_pred)
+
+plt.figure(figsize=(6,5))
+
+sns.heatmap(cm_stack,
+            annot=True,
+            fmt='d',
+            cmap='Greens',
+            xticklabels=['Rejected','Approved'],
+            yticklabels=['Rejected','Approved'])
+
+plt.title("Confusion Matrix - Stacking Ensemble")
+plt.xlabel("Predicted Label")
+plt.ylabel("True Label")
+
+plt.tight_layout()
+plt.show()
+
+
+----------------------------------------------------------------
+
+
+
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve, auc
+
+rf = models["Random Forest"]
+gb = models["Gradient Boosting"]
+et = models["Extra Trees"]
+
+rf_prob = rf.predict_proba(X_test)[:,1]
+gb_prob = gb.predict_proba(X_test)[:,1]
+et_prob = et.predict_proba(X_test)[:,1]
+mlp_prob = best_mlp.predict_proba(X_test)[:,1]
+stack_prob = stack_model.predict_proba(X_test)[:,1]
+
+fpr_rf, tpr_rf, _ = roc_curve(y_test, rf_prob)
+fpr_gb, tpr_gb, _ = roc_curve(y_test, gb_prob)
+fpr_et, tpr_et, _ = roc_curve(y_test, et_prob)
+fpr_mlp, tpr_mlp, _ = roc_curve(y_test, mlp_prob)
+fpr_stack, tpr_stack, _ = roc_curve(y_test, stack_prob)
+
+roc_rf = auc(fpr_rf, tpr_rf)
+roc_gb = auc(fpr_gb, tpr_gb)
+roc_et = auc(fpr_et, tpr_et)
+roc_mlp = auc(fpr_mlp, tpr_mlp)
+roc_stack = auc(fpr_stack, tpr_stack)
+
+plt.figure(figsize=(7,6))
+
+plt.plot(fpr_rf, tpr_rf, label=f"Random Forest (AUC={roc_rf:.3f})")
+plt.plot(fpr_gb, tpr_gb, label=f"Gradient Boosting (AUC={roc_gb:.3f})")
+plt.plot(fpr_et, tpr_et, label=f"Extra Trees (AUC={roc_et:.3f})")
+plt.plot(fpr_mlp, tpr_mlp, label=f"MLP (AUC={roc_mlp:.3f})")
+plt.plot(fpr_stack, tpr_stack, label=f"Stacking Ensemble (AUC={roc_stack:.3f})")
+
+plt.plot([0,1],[0,1],'k--')
+
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate")
+plt.title("ROC Curve Comparison")
+
+plt.legend()
+plt.grid()
+
+plt.tight_layout()
+plt.show()
+
+
+---------------------------------------------------------
+
+
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Add ensemble accuracies to results dictionary
+results["Voting Ensemble"] = ensemble_acc
+results["Stacking Ensemble"] = stack_acc
+
+# Convert dictionary to DataFrame
+results_df = pd.DataFrame(list(results.items()), columns=["Model", "Accuracy"])
+
+# Sort by accuracy
+results_df = results_df.sort_values(by="Accuracy", ascending=False)
+
+# Plot bar chart
+plt.figure(figsize=(10,6))
+
+plt.bar(results_df["Model"], results_df["Accuracy"])
+
+plt.xticks(rotation=45)
+
+plt.xlabel("Machine Learning Models")
+plt.ylabel("Accuracy Score")
+plt.title("Model Accuracy Comparison")
+
+plt.tight_layout()
+plt.show()
+
+
+----------------------------------------------------
+
+
+import joblib
+
+joblib.dump(stack_model, "loan_model.pkl")
+joblib.dump(scaler, "scaler.pkl")
+
+print("Model saved successfully!")
+
+---------------------------
+
+
+from google.colab import files
+files.download("loan_model.pkl")
+files.download("scaler.pkl")
+
+---------------------------
+
+
+import shap
+# Convert test data to dataframe
+X_test_df = pd.DataFrame(X_test, columns=X.columns)
+
+# Select Random Forest model
+rf_model = models["Random Forest"]
+
+# Create SHAP explainer
+explainer = shap.TreeExplainer(rf_model)
+
+# Use smaller sample to speed up
+X_sample = X_test_df.sample(300, random_state=42)
+
+# Calculate SHAP values
+shap_values = explainer.shap_values(X_sample)
+
+
+--------------------------------------
+
+
+import numpy as np
+print(np.array(shap_values).shape)
+
+output:
+
+(300, 25, 2)
+
+---------------------------------------
+
+
+print("\nExplanation for loan decision:\n")
+
+for i in range(5):
+
+    feature = reason_df.iloc[i]["Feature"]
+    value = reason_df.iloc[i]["Feature_Value"]
+    contribution = reason_df.iloc[i]["Contribution"]
+
+    if contribution > 0:
+        print(f"{feature} = {value} increased the chance of loan approval.")
+    else:
+        print(f"{feature} = {value} decreased the chance of loan approval.")
+
+
+Output:
+
+
+Explanation for loan decision:
+
+Loan_Purpose = 0.0 increased the chance of loan approval.
+Residential_Status = 1.0 increased the chance of loan approval.
+Dependents = 1.0 increased the chance of loan approval.
+Education = 0.0 increased the chance of loan approval.
+Employment_Status = 1.0 increased the chance of loan approval.
+
+
+--------------------------------------
+
+
+feature_names = X.columns
+xai_model = rf_model
+
+
+def explain_applicant(i):
+
+    """
+    Banking-style explanation
+    """
+
+    print("\n======================================")
+    print(f" EXPLAINABLE AI REPORT FOR APPLICANT #{i}")
+    print("======================================")
+
+    # -------------------------
+    # Model prediction
+    # -------------------------
+
+    sample = X_sample.iloc[[i]]
+
+    pred = xai_model.predict(sample)[0]
+    proba = xai_model.predict_proba(sample)[0]
+
+    decision_text = "APPROVED" if pred == 1 else "REJECTED"
+
+    print("Prediction:", decision_text)
+    print("Confidence:", round(np.max(proba) * 100, 2), "%")
+
+
+    # -------------------------
+    # Extract SHAP contributions
+    # -------------------------
+
+    if isinstance(shap_values, list):
+        contrib = shap_values[1][i]        # class 1 (approval)
+    else:
+        shap_arr = np.array(shap_values)
+
+        if shap_arr.ndim == 3:
+            contrib = shap_arr[i,:,1]
+        else:
+            contrib = shap_arr[i]
+
+    contrib = np.array(contrib).reshape(-1)
+
+
+    # -------------------------
+    # Build explanation table
+    # -------------------------
+
+    explain_df = pd.DataFrame({
+        "Feature": feature_names,
+        "Contribution": contrib
+    })
+
+    explain_df["Impact"] = explain_df["Contribution"].abs()
+
+    explain_df = explain_df.sort_values(by="Impact", ascending=False)
+
+    positive_df = explain_df[explain_df["Contribution"] > 0]
+    negative_df = explain_df[explain_df["Contribution"] < 0]
+
+
+    # -------------------------
+    # APPROVED → positive reasons
+    # -------------------------
+
+    if pred == 1:
+
+        print("\nMain reasons for LOAN APPROVAL:")
+
+        top_pos = positive_df.head(5)
+
+        if len(top_pos) == 0:
+            print(" + Approved based on overall financial profile")
+        else:
+            for _, row in top_pos.iterrows():
+                print(f" + Good {row['Feature'].replace('_',' ').lower()} increased approval chance")
+
+        features_list = [f.replace("_"," ").lower() for f in top_pos["Feature"].tolist()]
+
+        if len(features_list) == 0:
+            sentence = "The loan was approved based on the overall financial profile."
+        else:
+            sentence = "The loan was approved mainly due to good " + ", ".join(features_list[:3]) + "."
+
+
+    # -------------------------
+    # REJECTED → negative reasons
+    # -------------------------
+
+    else:
+
+        print("\nMain reasons for LOAN REJECTION:")
+
+        top_neg = negative_df.head(5)
+
+        if len(top_neg) == 0:
+            print(" - Rejected based on overall risk profile")
+        else:
+            for _, row in top_neg.iterrows():
+                print(f" - Poor {row['Feature'].replace('_',' ').lower()} reduced approval chance")
+
+        features_list = [f.replace("_"," ").lower() for f in top_neg["Feature"].tolist()]
+
+        if len(features_list) == 0:
+            sentence = "The loan was rejected based on the overall risk profile."
+        else:
+            sentence = "The loan was rejected mainly due to poor " + ", ".join(features_list[:3]) + "."
+
+
+    # -------------------------
+    # Final explanation
+    # -------------------------
+
+    print("\nEnglish Explanation:")
+    print(sentence)
+
+    print("\nFinal Decision:", decision_text)
+
+
+explain_applicant(0)
+
+output:
+
+
+======================================
+ EXPLAINABLE AI REPORT FOR APPLICANT #0
+======================================
+Prediction: REJECTED
+Confidence: 91.0 %
+
+Main reasons for LOAN REJECTION:
+ - Poor loan amount requested reduced approval chance
+ - Poor credit score reduced approval chance
+ - Poor occupation type reduced approval chance
+ - Poor annual income reduced approval chance
+ - Poor city/town reduced approval chance
+
+English Explanation:
+The loan was rejected mainly due to poor loan amount requested, credit score, occupation type.
+
+Final Decision: REJECTED
+
+explain_applicant(10)
+
+output:
+
+
+
+======================================
+ EXPLAINABLE AI REPORT FOR APPLICANT #10
+======================================
+Prediction: APPROVED
+Confidence: 79.0 %
+
+Main reasons for LOAN APPROVAL:
+ + Good loan amount requested increased approval chance
+ + Good credit score increased approval chance
+ + Good age increased approval chance
+ + Good bank account history increased approval chance
+ + Good marital status increased approval chance
+
+English Explanation:
+The loan was approved mainly due to good loan amount requested, credit score, age.
+
+Final Decision: APPROVED
